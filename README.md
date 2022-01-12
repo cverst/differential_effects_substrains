@@ -1,6 +1,3 @@
-# NOTE
-*This code is currently being refactored on branch [dev](https://github.com/cverst/differential_effects_substrains/tree/dev).*
-
 # Description
 This repository was used for analysis of the ABR data published as "Differential effects of noise exposure between substrains of CBA mice." This article has been accepted to [Hearing Research](https://www.sciencedirect.com/journal/hearing-research).
 
