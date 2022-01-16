@@ -3,13 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
 import seaborn as sns
-import itertools
 import rpy2.robjects.packages as rpackages
 from matplotlib.ticker import MaxNLocator
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
-from rpy2.robjects import default_converter
-from rpy2.robjects.conversion import localconverter
+from matplotlib.colors import to_rgba
+from utils.statistics import fit_lme, nonparametric_tests
 
 
 COLORMAP = {
@@ -23,16 +20,8 @@ PALE_COLORMAP = {
     "ZT15": [0.6, 0.6, 1],
 }
 
-# Import R packages
-rbase = rpackages.importr('base')
-rgraphics = rpackages.importr('graphics')
-rstats = rpackages.importr('stats')
-rnlme = rpackages.importr('nlme')
-rcar = rpackages.importr('car')
-rlsmeans = rpackages.importr('lsmeans')
 
-
-def plot_wave1_distribution(df: pd.DataFrame) -> None:
+def wave1_distribution(df: pd.DataFrame) -> None:
     """Plot distribution of standardized wave 1 data used for outlier detection
 
     Args:
@@ -40,10 +29,12 @@ def plot_wave1_distribution(df: pd.DataFrame) -> None:
     """
 
     N_BINS = 256
-    CONFINT = .95
+    CONFINT = 0.95
 
     # Remove NaNs
-    standardized_deviations = df.loc[:, "rlm_error_standardized"].dropna()  # remove NaNs where RLM was impossible
+    standardized_deviations = df.loc[
+        :, "rlm_error_standardized"
+    ].dropna()  # remove NaNs where RLM was impossible
 
     # Calculate histogram
     hist, _ = np.histogram(
@@ -65,7 +56,10 @@ def plot_wave1_distribution(df: pd.DataFrame) -> None:
     plt.plot(x, stats.skewnorm.pdf(x, *distrib_params), "r", lw=2)
     interval = stats.skewnorm.interval(CONFINT, *distrib_params)
     plt.plot(interval, [0.01, 0.01], "y", lw=10)
-    plt.legend(["PDF", f"{round(CONFINT*100)}% confidence interval", "Wave 1 amplitude"], loc="upper left")
+    plt.legend(
+        ["PDF", f"{round(CONFINT*100)}% confidence interval", "Wave 1 amplitude"],
+        loc="upper left",
+    )
 
     # Count number of outliers
     n_outliers = (
@@ -97,6 +91,7 @@ def plot_wave1_distribution(df: pd.DataFrame) -> None:
 
     return
 
+
 def abr_io(df: pd.DataFrame) -> None:
     """Plot input-output functions indicate outliers.
 
@@ -109,7 +104,9 @@ def abr_io(df: pd.DataFrame) -> None:
             The dataframe must Make sure only a single experiment is parsed.
     """
 
-    assert df.loc[:, "id"].nunique() == 1, "More than 1 'id' present in input dataframe!"
+    assert (
+        df.loc[:, "id"].nunique() == 1
+    ), "More than 1 'id' present in input dataframe!"
 
     # Get abr_times and stim_freqs and order them
     unique_abr_times = df.loc[:, "abr_time"].unique()
@@ -135,12 +132,18 @@ def abr_io(df: pd.DataFrame) -> None:
                 x = df_temp["level_db"]
                 y = np.log(df_temp["wave1_amp"])
                 mask = df_temp["is_outlier"]
-                
+
                 # Plotting
                 plt.subplot(nrows, ncols, count_abrt * ncols + count_sf + 1)
                 plt.plot(x, y, marker="o", linestyle="--", color="b")
-                plt.plot(x[mask], y[mask], marker="o", markeredgecolor="r",
-                         markerfacecolor="r", linestyle="")
+                plt.plot(
+                    x[mask],
+                    y[mask],
+                    marker="o",
+                    markeredgecolor="r",
+                    markerfacecolor="r",
+                    linestyle="",
+                )
                 plt.plot(x, df_temp["rlm"], "k:")
 
                 plt.plot(x, df_temp["confint_low"], "y:")
@@ -169,24 +172,20 @@ def abr_threshold(df: pd.DataFrame, ylim: list = [-5, 95]) -> None:
     """Plot ABR thresholds and check statistical significance
 
     This function first plots different noisetypes within each
-    frequency. Subsequently, statistical tests are run to find
-        1) Differences within frequency groups (Kruskal-Wallis
-            test (nonparametric))
-        2) Differences between noisetypes within a frequency
-            group (post hoc Mann-Whitney U)
+    frequency. Subsequently it calls the function
+    nonparametric_tests for statistical evaluation.
 
     Parameters
     ----------
     df : pandas.DataFrame
-        
+
 
     Args:
         df (pd.DataFrame): A selection of ABR data used for threshold analysis.
         ylim (list, optional): Limits of Y-axis. Defaults to [-5, 95].
     """
 
-    ALPHA = 0.05
-    JITTER_FACTOR = .05
+    JITTER_FACTOR = 0.05
 
     unique_abr_times = sorted(df.loc[:, "abr_time"].unique())  # baseline is now last
 
@@ -286,7 +285,7 @@ def abr_threshold(df: pd.DataFrame, ylim: list = [-5, 95]) -> None:
     clrs = [plt.getp(line, "color") + [1.0] for line in ax.lines]
     for c, v in enumerate(ax.lines):
         plt.setp(v, markeredgecolor=clrs[c])
-    nlineslight = len(ax.lines)
+    n_lines_light = len(ax.lines)
 
     mean_sem = (
         df.loc[:, ["noise_type", "freq_hz", "threshold"]]
@@ -305,7 +304,7 @@ def abr_threshold(df: pd.DataFrame, ylim: list = [-5, 95]) -> None:
             capsize=4,
             marker="o",
             markersize=6,
-            zorder=nlineslight + 1,
+            zorder=n_lines_light + 1,
             label=nt,
         )
 
@@ -318,42 +317,7 @@ def abr_threshold(df: pd.DataFrame, ylim: list = [-5, 95]) -> None:
     plt.show()
 
     # Statistical tests
-    print("alpha = " + str(ALPHA) + "\n")
-    for freq_hz in np.sort(df.loc[:, "freq_hz"].unique()):
-        small_df = df.query("freq_hz == {f}".format(f=freq_hz))
-        print("Frequency: " + str(freq_hz) + " kHz")
-        kw = stats.kruskal(
-            *(
-                small_df.loc[:, "threshold"][small_df.loc[:, "noise_type"] == nt]
-                for nt in small_df.loc[:, "noise_type"].unique()
-            )
-        )
-        print("  Overall Kruskal-Wallis:")
-        if kw.pvalue < ALPHA:
-            print("   *Significant difference (p={:.4f})".format(kw.pvalue))
-            print("  Post hoc Mann-Whitney U:")
-            for nt_comb in itertools.combinations(small_df.loc[:, "noise_type"].unique(), 2):
-                mwu = stats.mannwhitneyu(
-                    *(
-                        small_df.loc[:, "threshold"][small_df.loc[:, "noise_type"] == nt]
-                        for nt in nt_comb
-                    ),
-                    alternative="two-sided"
-                )
-                if mwu.pvalue < ALPHA:
-                    print(
-                        "   *Significant effect for groups {grp0} <--> {grp1} (p={pval:.4f})".format(
-                            grp0=nt_comb[0], grp1=nt_comb[1], pval=mwu.pvalue
-                        )
-                    )
-                else:
-                    print(
-                        "    No significant effect for groups {grp0} <--> {grp1} (p={pval:.4f})".format(
-                            grp0=nt_comb[0], grp1=nt_comb[1], pval=mwu.pvalue
-                        )
-                    )
-        else:
-            print("    No significant difference (p={:.4f})".format(kw.pvalue))
+    nonparametric_tests(df)
 
     plt.show()
 
@@ -361,12 +325,12 @@ def abr_threshold(df: pd.DataFrame, ylim: list = [-5, 95]) -> None:
 
 
 def wave1_amplitude(
-        df: pd.DataFrame,
-        stim_levels: list = [],
-        xlim: list = [],
-        ylim: list = [],
-        lme_stim_levels: list = []
-    ) -> None:
+    df: pd.DataFrame,
+    stim_levels: list = [],
+    xlim: list = [],
+    ylim: list = [],
+    lme_stim_levels: list = [],
+) -> None:
     """Plot wave 1 data and fit LME model
 
     Visualize wave 1 amplitude data and indicate where different experimental
@@ -568,7 +532,8 @@ def wave1_amplitude(
                     [
                         l.lower()
                         for l in [
-                            w.replace("ZT15 - ZT3", "ZT3 - ZT15") for w in unique_contrast
+                            w.replace("ZT15 - ZT3", "ZT3 - ZT15")
+                            for w in unique_contrast
                         ]
                     ]
                 )[::-1]
@@ -585,12 +550,10 @@ def wave1_amplitude(
                 s_mask = np.all(
                     [v for k, v in signif_masks.items() if k in contrast], axis=0
                 )
-                comparisons_small = comparisons.query(
-                    "contrast == @contrast"
-                )[s_mask]
+                comparisons_small = comparisons.query("contrast == @contrast")[s_mask]
                 significant_levels = comparisons_small.loc[
-                    comparisons_small.loc[:, "p.value"] <= ALPHA,
-                    "level_db"].astype("int64")
+                    comparisons_small.loc[:, "p.value"] <= ALPHA, "level_db"
+                ].astype("int64")
                 plt.plot(
                     significant_levels,
                     np.ones(len(significant_levels)) * y_marker[count_contrast],
@@ -637,7 +600,7 @@ def wave1_amplitude(
             plt.legend(
                 handles, labels, ncol=2, loc="upper center", bbox_to_anchor=(0.5, 1.4)
             )
-        
+
         plt.title(str(sf / 1e3) + " kHz")
         if count_sf == len(unique_stim_freqs) - 1:
             plt.xlabel("Stimulus intensity (dB SPL)", fontsize=14)
@@ -659,142 +622,268 @@ def wave1_amplitude(
     return
 
 
-def fit_lme(
-        df: pd.DataFrame,
-        weighted: bool = True,
-        print_results: bool = False
-    )  -> tuple([pd.DataFrame, pd.DataFrame, rnlme]):
-    """Apply linear mixed model to ABR data
+def lvl_diff(df: pd.DataFrame) -> None:
 
-    This function uses an R instance to fit a linear mixed effects (LME) model
-    to ABR wave 1 amplitude data. The following formula is used:
+    # Cutoffs for level_f1 - level_f2
+    LVL_DIFF_PRIMARIES = 10
+    LVL_DIFF_ALLOWED = 20
 
-        log(wave1_amp) ~ level_db * noise_type
+    plt.figure()
 
-    The interaction term, indicated by "*", allows for different slopes for the
-    noise_types. This syntax in R essentially expands to the function
-    
-        dependent_variable = independent_variable + factor + independent_variable:factor
-    
-    and allows for different slopes for each NoiseType.
+    # With outliers
+    _, bins, _ = plt.hist(
+        df.loc[:, "level_f1"] - df.loc[:, "level_f2"],
+        bins=32,
+        label="With outliers",
+    )
 
-    After fitting the LME model the model residuals are tested for
-    heteroskedacity using Levene's test (see also
-    https://en.wikipedia.org/wiki/Levene's_test). A message will be printed if
-    the test fails to show homoskedacity. However, visual inspection is
-    generally considered a better method.
+    # Without outliers
+    df_no_outliers = df.query("is_outlier == False")
+    plt.hist(
+        df_no_outliers.loc[:, "level_f1"] - df_no_outliers.loc[:, "level_f2"],
+        bins=bins,
+        label="Without outliers",
+    )
 
-    The data can be weighted in the model to counter heteroskedacity. This is
-    done by allowing each subject to have a separate intercept. Each intercept
-    for a given noise_type will be the mean of the intercepts of the subjects
-    within that noise_type. The output of the model gives an estimate of the
-    variance around that estimate, which reflects the variability of the
-    intercepts fit for each subject. This weighting is an input parameter.
+    ylim = plt.gca().get_ylim()
+    x_vlines = [
+        LVL_DIFF_PRIMARIES - LVL_DIFF_ALLOWED,
+        LVL_DIFF_PRIMARIES + LVL_DIFF_ALLOWED,
+    ]
+    plt.vlines(x_vlines, ylim[0], ylim[1], colors="r", label="Outlier boundary")
 
-    This function will look at fields id, noise_type, level_db, and wave 1
-    amplitude only.
+    plt.xlabel("Recorded level 1 - level 2 (dB)")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.title("Before (top) and after (bottom) outlier removal")
+    plt.show()
+    return
 
-    Args:
-        df (pd.DataFrame, optional): Dataframe with data from which predictions
-            will be made. It is assumed to have the following column names:
-                id : category
-                noise_type : category
-                level_db : float64
-                wave1_amp : float64
-            IMPORTANT! Pandas dataframe columns MUST have appropriate datatype
-            (i.e., categorical, float64)!
-        weighted (bool, optional): Switch to enable weighting of data to
-            counter heteroskedactiy. Defaults to True.
-        print_results (bool, optional): Switch to enable printing output of
-            model results and statistical tests.. Defaults to False.
 
-    Returns:
-        tuple([predictions, comparisons, model]:
-            predictions (pd.DataFrame): Dataframe with predictions of wave1_amp
-                for each combination of noise_type and level_db.
-            comparisons (pd.DataFrame): Dataframe with comparisons of
-                wave1_amp for all noise_types within each level_db, including
-                p-values of their similarity.
-            model (rnlme): Instance of the model generated in R.
+def dp_threshold(df: pd.DataFrame, ylim: list) -> None:
+    """Create strip plot showing distribution DPOAE threshold
+
+    When parsing a list of dictionaries from .awf files this function does the
+    following:
+
+        1) Find the first stimulus intensity that evokes a DP of -5 dB SPL or more and if
+        none are found, use 85 dB SPL as threshold.
+        2) Plot a strip plot for these thresholds. Separate each Frequency, and
+        accept groups of noisetypes within each frequency.
+        3) Do a Kruskal-Wallis test (nonparametric) to find differences within frequency
+        groups and if a difference is found, do a post hoc analysis between noisetypes
+        within a frequency group.
+
+    If input argument "shift=True" the threshold shift between different recording times
+    (baseline, 24h, 2w) is plotted and tested.
+
+    Parameters
+    ----------
+    datadict : list of dictionaries
+        A (list of) dictionaries created with load_data_dp.
     """
 
-    # Convert pandas DataFrame to R dataframe
-    with localconverter(default_converter + pandas2ri.converter) as cv:
-        r_df = robjects.conversion.py2rpy(df)
+    NOISEFLOOR = {8: -5, 12: -5, 16: 0, 24: 0, 32: 5}
 
-    # Define model
-    formula_model = robjects.Formula("log(wave1_amp) ~ level_db * noise_type")
-    formula_weights = robjects.Formula("~1|level_db")  # separate intercept for each subject
-    independent_var = "level_db"
-    formula_random = robjects.Formula("~1|id")
+    # Remove outliers!
+    df = df.query("is_outlier == False").copy()
 
-    # Determine weights
-    if weighted:
-        weights = rnlme.varIdent(form=formula_weights)
+    df.loc[:, "freq_hz"] = df.loc[:, "freq_hz"] / 1e3
+
+    # Create axes
+    fig = plt.figure()
+
+    # Figure title
+    u_subs = df.loc[:, "substrain"].unique()
+    u_nois = df.loc[:, "noise_spl"].unique()
+    u_expe = df.loc[:, "experimenter_id"].unique()
+    if len(u_subs) > 1:
+        subs_id = "+".join(u_subs)
     else:
-        weights = robjects.r("NULL")
-
-    # Fit model
-    # ML estimates are unbiased for the fixed effects but biased for the random
-    # effects, whereas the REML estimates are biased for the fixed effects and
-    # unbiased for the random effects.
-    model = rnlme.lme(
-        formula_model, method="REML", random=formula_random, data=r_df, weights=weights
-    )  # REML preferred over ML for small sample sizes
-
-    if print_results:
-        print(rstats.anova(model, type="marginal"))
-
-    # Test for heteroskedacity
-    levene_model = rcar.leveneTest(rstats.residuals(model), group=r_df.rx2("noise_type"))
-    pval_levene_model = levene_model.rx("Pr(>F)")[0][0]
-
-    if print_results:
-        print("")
-        print(levene_model)
-    
-    if pval_levene_model < 0.05:
-        print(f"  Residuals could be heteroskedastic (Levene's test, p={pval_levene_model:.4f}).")
-        print("")
+        subs_id = u_subs[0]
+    if len(u_nois) > 1:
+        nois_id = "+".join(u_nois)
     else:
-        print("  Residuals are homoskedastic.")
-        print("")
-
-    # Make predictions with model
-
-    # Specify variables to be used as predictors.
-    prediction_grid = rbase.expand_grid(
-        noise_type=rbase.unique(rbase.c(rbase.as_character(r_df.rx2("noise_type")))),
-        level_db=rbase.sort(rbase.unique(rbase.c(r_df.rx2(independent_var)))),
+        nois_id = u_nois[0]
+    if len(u_expe) > 1:
+        expe_id = "+".join(u_expe)
+    else:
+        expe_id = u_expe[0]
+    fig.suptitle(
+        subs_id + ", " + str(nois_id) + " SPL, experimenter " + expe_id,
+        fontsize=14,
     )
 
-    # Make predictions
-    predicted_values = rstats.predict(model, prediction_grid, level=0)
-    
-    # Combine predictors with predictions
-    predictions = rbase.data_frame(prediction_grid, predicted=predicted_values)
-
-    # Post hoc tests by stimulus intensity, corrected for multiple comparisons
-    tt = rlsmeans.lstrends(
-        model,
-        "noise_type",
-        var=independent_var,
-        at=rbase.list(
-            level_db=rbase.sort(rbase.unique(rbase.c(r_df.rx2(independent_var))))
-        ),
-        by=independent_var,
-        transform="response",
+    df.loc[:, "above_nf"] = df.apply(
+        lambda row: row["level_distprod"] >= NOISEFLOOR[row["freq_hz"]], axis=1
     )
-    comparisons = rbase.rbind(rgraphics.pairs(tt, by=independent_var), adjust="mvt")
 
-    if print_results:
-        print("")
-        print(comparisons)
+    df_85 = df.query("level_db == 80").copy()
+    df_85.loc[:, "level_db"] = 85
+    df_85.loc[:, "above_nf"] = True
+    df = df.append(df_85).reset_index()
 
-    # Create output variables
-    predictions_out = pd.DataFrame(pandas2ri.rpy2py_floatvector(predictions)).astype(
-        {"noise_type": "category"}
+    df_threshold = df.query("above_nf == True").groupby(by=["file_number"]).min()
+    df_threshold.loc[:, "threshold"] = df_threshold.loc[:, "level_db"]
+
+    # Plotting
+    jitter_factor = 1
+    df_threshold.loc[:, "threshold"] = np.add(
+        df_threshold.loc[:, "threshold"],
+        np.random.uniform(-jitter_factor, jitter_factor, len(df_threshold)),
     )
-    comparisons_out = pandas2ri.rpy2py_dataframe(rbase.summary(comparisons))
 
-    return predictions_out, comparisons_out, model
+    ax = plt.axes()
+    df_threshold.loc[:, "id"] = df_threshold.loc[:, "id"].astype(str)
+    df_threshold.loc[:, "freq_hz_cat"] = df_threshold.loc[:, "freq_hz"].astype(
+        "category"
+    )
+    df_threshold.loc[:, "freq_hz_cat"] = df_threshold.loc[
+        :, "freq_hz_cat"
+    ].cat.rename_categories({8.0: "8", 12.0: "12", 16.0: "16", 24.0: "24", 32.0: "32"})
+
+    sns.lineplot(
+        ax=ax,
+        x="freq_hz_cat",
+        y="threshold",
+        hue="noise_type",
+        units="id",
+        data=df_threshold,
+        estimator=None,
+        linewidth=0.5,
+        mew=0.5,
+        mfc="w",
+        marker="o",
+        ms=4,
+        palette=PALE_COLORMAP,
+        legend=False,
+    )
+
+    clrs = [plt.getp(line, "color") + [1.0] for line in ax.lines]
+    for c, v in enumerate(ax.lines):
+        plt.setp(v, markeredgecolor=clrs[c])
+    n_lines_light = len(ax.lines)
+
+    mean_sem = (
+        df_threshold.loc[:, ["noise_type", "freq_hz", "threshold"]]
+        .groupby(by=["noise_type", "freq_hz"])
+        .agg(["mean", "sem"])
+        .reset_index()
+    )
+    for nt in sorted(mean_sem.loc[:, ("noise_type", "")].unique(), reverse=True):
+        small_df = mean_sem.query("@mean_sem.noise_type == @nt")
+        ax.errorbar(
+            np.arange(0, len(small_df)),
+            small_df.loc[:, ("threshold", "mean")],
+            yerr=small_df.loc[:, ("threshold", "sem")],
+            color=COLORMAP[nt],
+            linewidth=1.5,
+            capsize=4,
+            marker="o",
+            markersize=6,
+            zorder=n_lines_light + 1,
+            label=nt,
+        )
+
+    plt.ylim(ylim)
+    ax.legend()
+    plt.xlabel("Stimulus frequency F2 (kHz)", fontsize=14)
+    plt.ylabel("L1 at threshold (dB SPL)", fontsize=14)
+    plt.show()
+
+    # Statistical tests
+    nonparametric_tests(df_threshold)
+
+    return
+
+
+def histology_counts(df: pd.DataFrame) -> None:
+    """Plots histological counts.
+
+    Args:
+        df (pd.DataFrame): A dataframe with counts of ribbon synapses or counts
+            of synapse pairings.
+    """
+
+    df.loc[:, "freq_cat"] = df.loc[:, "freq_hz"].astype("category")
+    df.loc[:, "freq_cat"] = df.loc[:, "freq_cat"].cat.rename_categories(
+        {
+            6e3: "6",
+            8e3: "8",
+            12e3: "12",
+            16e3: "16",
+            24e3: "24",
+            32e3: "32",
+            48e3: "48",
+            64e3: "64",
+        }
+    )
+
+    g = sns.relplot(
+        x="freq_cat",
+        y="counts",
+        hue="abr_time",
+        units="id",
+        estimator=None,
+        row="substrain",
+        col="noise_spl",
+        hue_order=["baseline", "ZT3", "ZT15"],
+        row_order=["CaJ", "JRj", "Sca"],
+        col_order=[100, 103, 105],
+        data=df,
+        kind="line",
+        lw=0.5,
+        mew=0.5,
+        mfc="w",
+        marker="o",
+        ms=4,
+        palette=PALE_COLORMAP,
+        height=2.2,
+        aspect=1.5,
+        legend=False,
+    )
+
+    mean_sem = (
+        df.loc[:, ["substrain", "noise_spl", "abr_time", "freq_hz", "counts"]]
+        .groupby(by=["substrain", "noise_spl", "abr_time", "freq_hz"])
+        .agg(["mean", "sem"])
+        .reset_index()
+    )
+    for ax in g.axes.flatten():
+        clrs = [to_rgba(line.get_color()) for line in ax.lines]
+        for c, v in enumerate(ax.lines):
+            v.set_markeredgecolor(clrs[c])
+
+        if "CaJ" in ax.get_title():
+            small_df = mean_sem.query("@mean_sem.substrain == 'CaJ'")
+        elif "JRj" in ax.get_title():
+            small_df = mean_sem.query("@mean_sem.substrain == 'JRj'")
+        elif "Sca" in ax.get_title():
+            small_df = mean_sem.query("@mean_sem.substrain == 'Sca'")
+        if "100" in ax.get_title():
+            small_df = small_df.query("@mean_sem.noise_spl == 100")
+        elif "103" in ax.get_title():
+            small_df = small_df.query("@mean_sem.noise_spl == 103")
+        elif "105" in ax.get_title():
+            small_df = small_df.query("@mean_sem.noise_spl == 105")
+        for c, time in enumerate(["ZT3", "ZT15"]):
+            plot_df = small_df.query("@mean_sem.abr_time == @time")
+            ax.errorbar(
+                np.arange(0, len(plot_df)),
+                plot_df.loc[:, ("counts", "mean")],
+                yerr=plot_df.loc[:, ("counts", "sem")],
+                linewidth=1.5,
+                capsize=4,
+                marker="o",
+                markersize=6,
+                zorder=1e3,
+                label=time,
+                color=COLORMAP[time],
+            )
+
+    g.set(ylim=(-1, 31), xlabel="Frequency (kHz)", ylabel="Count per IHC")
+
+    ax.legend()
+    plt.show()
+
+    return

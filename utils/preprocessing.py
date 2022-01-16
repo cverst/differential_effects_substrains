@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from scipy import stats
-from utils.plotting_stats import plot_wave1_distribution
+from utils.plotting import wave1_distribution, lvl_diff
 
 FIELDS_RLM = [
     "file_number",
@@ -18,10 +18,10 @@ def abr_prep(df: pd.DataFrame) -> pd.DataFrame:
     """Wrapper function for preprocessing of ABR data.
 
     Args:
-        df (pd.DataFrame): Raw data.
+        df (pd.DataFrame): Raw ABR data.
 
     Returns:
-        pd.DataFrame: Preprocessed data.
+        pd.DataFrame: Preprocessed ABR data.
     """
 
     print("Detecting outliers...")
@@ -29,10 +29,10 @@ def abr_prep(df: pd.DataFrame) -> pd.DataFrame:
 
     print("Averaging and removing duplicates...")
     df = duplicates_to_means(df)
-    
+
     print("Done.")
 
-    plot_wave1_distribution(df)
+    wave1_distribution(df)
 
     return df
 
@@ -45,7 +45,7 @@ def detect_outliers_abr(df: pd.DataFrame) -> pd.DataFrame:
     2. The data is standardized (normalization to mean and standard deviation)
     3. A skewed normal distribution is fit to those data
     4. Values outside the 95% confidence interval are indicated as outlier
-    
+
     Args:
         df (pd.DataFrame): Dataframe with all wave 1 recordings to consider for
         outlier detection.
@@ -56,7 +56,7 @@ def detect_outliers_abr(df: pd.DataFrame) -> pd.DataFrame:
             "is_outlier" is a boolean indicating if a data point is an outlier.
     """
 
-    CONFINT = .95
+    CONFINT = 0.95
 
     file_nums = df.loc[:, "file_number"].unique()
 
@@ -68,7 +68,9 @@ def detect_outliers_abr(df: pd.DataFrame) -> pd.DataFrame:
     df = df.merge(df_rlm, how="left", on=["file_number", "level_db"])
 
     # Outlier detection
-    standardized_deviations = df.loc[:, "rlm_error_standardized"].dropna()  # remove NaNs where RLM was impossible
+    standardized_deviations = df.loc[
+        :, "rlm_error_standardized"
+    ].dropna()  # remove NaNs where RLM was impossible
     distrib_params = stats.skewnorm.fit(standardized_deviations)  # a, loc, scale
     interval = stats.skewnorm.interval(CONFINT, *distrib_params)
     df.loc[:, "is_outlier"] = np.any(
@@ -78,8 +80,12 @@ def detect_outliers_abr(df: pd.DataFrame) -> pd.DataFrame:
         ],
         axis=0,
     )
-    df.loc[:, "confint_low"] = (interval[0] * df.loc[:, "standardization_std"]) + df.loc[:, "rlm"]
-    df.loc[:, "confint_high"] = (interval[1] * df.loc[:, "standardization_std"]) + df.loc[:, "rlm"]
+    df.loc[:, "confint_low"] = (
+        interval[0] * df.loc[:, "standardization_std"]
+    ) + df.loc[:, "rlm"]
+    df.loc[:, "confint_high"] = (
+        interval[1] * df.loc[:, "standardization_std"]
+    ) + df.loc[:, "rlm"]
 
     return df
 
@@ -91,10 +97,10 @@ def wave1_rlm(df: pd.DataFrame) -> pd.DataFrame:
     relation is near linear on a logarithmic scale:
 
         (log(wave 1 amplitude) vs. stimulus level)
-    
+
     The wave 1 data must come from a single experiment, meaning that it must
     have a single file number.
-        
+
 
     Args:
         df (pd.DataFrame): Dataframe with wave 1 data from single file number,
@@ -105,7 +111,9 @@ def wave1_rlm(df: pd.DataFrame) -> pd.DataFrame:
     """
 
     df = df.copy()
-    assert df.loc[:, "file_number"].nunique() == 1, "Wave 1 amplitudes not from a single file!"
+    assert (
+        df.loc[:, "file_number"].nunique() == 1
+    ), "Wave 1 amplitudes not from a single file!"
 
     wave1_log = np.log(df.loc[:, "wave1_amp"])
     if df.shape[0] > 2:
@@ -113,7 +121,7 @@ def wave1_rlm(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[:, "rlm"] = rlm_fit(x, wave1_log)
     else:
         df.loc[:, "rlm"] = np.nan
-    
+
     df.loc[:, "rlm_error"] = wave1_log - df.loc[:, "rlm"]
 
     # Use unweighted std for standardization. Weighted std is numerically
@@ -123,24 +131,26 @@ def wave1_rlm(df: pd.DataFrame) -> pd.DataFrame:
     df.loc[:, "standardization_std"] = std_temp
     # df_temp["W1amp_normalized"] = (wave1_log - np.mean(wave1_log)) / np.std(wave1_log)
 
-    df.astype({
-        "file_number": "int64",
-        "level_db": "float64",
-        "rlm": "float64",
-        "rlm_error": "float64",
-        "rlm_error_standardized": "float64",
-        "standardization_std": "float64",
-    })
+    df.astype(
+        {
+            "file_number": "int64",
+            "level_db": "float64",
+            "rlm": "float64",
+            "rlm_error": "float64",
+            "rlm_error_standardized": "float64",
+            "standardization_std": "float64",
+        }
+    )
 
     return df.loc[:, FIELDS_RLM]
 
 
 def rlm_fit(x: np.array, y: np.array) -> list:
     """Fit robust regression model
-    
+
     Fit statsmodels.api.RLM to input data. Robust regression is insensitive to
     outliers.
-    
+
     Args:
         x (np.array): Independent parameter.
         y (np.array): Dependent parameter.
@@ -150,7 +160,7 @@ def rlm_fit(x: np.array, y: np.array) -> list:
     """
 
     # Add intercept
-    x = sm.add_constant(x)  
+    x = sm.add_constant(x)
 
     # Fit model
     model = sm.RLM(y, x)
@@ -240,5 +250,77 @@ def duplicates_to_means(df: pd.DataFrame) -> pd.DataFrame:
         categories=df.loc[:, "analyzer_id"].unique()
     )
     df = df.astype(df_dtypes)
+
+    return df
+
+
+def dp_prep(df: pd.DataFrame) -> pd.DataFrame:
+    """Wrapper function for preprocessing of DP data.
+
+    Args:
+        df (pd.DataFrame): Raw DP data.
+
+    Returns:
+        pd.DataFrame: Preprocessed DP data.
+    """
+
+    print("Detecting outliers...")
+    df = detect_outliers_dp(df)
+
+    # Experiments 'C42_3', 'C46095_1', and 'I-1658_16' have a freq in their
+    # filename that does not match the freq used according to the .awf file.
+    print("Removing duplicates...")
+    n_dupes = sum(df.duplicated(subset=["abr_time", "freq_hz", "level_db", "id"]))
+    print(f"  Found {n_dupes} duplicates.")
+    df = df.drop_duplicates(subset=["abr_time", "freq_hz", "level_db", "id"])
+
+    print("Done.")
+
+    lvl_diff(df)
+
+    return df
+
+
+def detect_outliers_dp(df: pd.DataFrame) -> pd.DataFrame:
+    """Detect outliers in DP data.
+
+    Distortion product (DP) outliers are removed based on the intensity ratio
+    of f1:f2. Any data points where the in-ear recorded difference between the
+    stimulus level of the two primaries deviates by more than twenty decibels
+    of the expected difference, is regarded as a failed recording. The acoustic
+    signal sent into the ear for frequency 1 is 10 dB higher than that of
+    frequency 2. Therefore, if the recorded difference in sound level follows
+
+        l1 - l2 < 10 - 20
+
+    or
+
+        l1 - l2 > 10 + 20
+
+    the associated data point is considered an outlier. If a data point is
+    identified as outlier, all other data points of that file will be labeled
+    as outlier.
+
+    Args:
+        df (pd.DataFrame): Dataframe with all DP data consider for outlier
+            detection.
+
+    Returns:
+        pd.DataFrame: Original dataframe with a new column "is_outlier", a
+            boolean indicating if a data point is an outlier or not.
+    """
+
+    # Define cutoff and print filenames that have level_f1 - level_f2 beyond that cutoff
+    LVL_DIFF_PRIMARIES = 10
+    LVL_DIFF_ALLOWED = 20
+
+    # Indicate file_numbers with at least one outlier
+    df_outliers = df.query(
+        f"level_f1 - level_f2 < {LVL_DIFF_PRIMARIES - LVL_DIFF_ALLOWED} or level_f1 - level_f2 > {LVL_DIFF_PRIMARIES + LVL_DIFF_ALLOWED}"
+    )
+    file_nums_outliers = df_outliers.loc[:, "file_number"].unique()
+    df.loc[:, "is_outlier"] = [
+        True if num in file_nums_outliers else False for num in df.loc[:, "file_number"]
+    ]
 
     return df

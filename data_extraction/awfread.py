@@ -1,47 +1,48 @@
 import numpy as np
 from datetime import datetime, date
 
-def awfread(path: str) -> dict:
+
+def awf_read(path: str) -> dict:
     """TDT .awf file reader.
 
     Parameters
     ----------
     path : string
-        String containing the path to the awf file to be imported.
+        String containing the path to the .awf file to be imported.
 
     Returns
     -------
     data : dictionary
-        Dictionary containing all data from specified awf file.
+        Dictionary containing all data from specified .awf file.
     """
 
     # Initialize parameters
-    isRZ = False
+    is_rz = False
 
-    RecHead = dict()
+    rec_head = dict()
     groups = []
     data = dict()
 
     with open(path, "rb") as fid:
 
         # Read RecHead data
-        RecHead["nens"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["ymax"] = np.fromfile(fid, dtype=np.float32, count=1)[0]
-        RecHead["ymin"] = np.fromfile(fid, dtype=np.float32, count=1)[0]
-        RecHead["autoscale"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["nens"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["ymax"] = np.fromfile(fid, dtype=np.float32, count=1)[0]
+        rec_head["ymin"] = np.fromfile(fid, dtype=np.float32, count=1)[0]
+        rec_head["autoscale"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-        RecHead["size"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["gridsize"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["showgrid"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["size"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["gridsize"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["showgrid"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-        RecHead["showcur"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["showcur"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-        RecHead["text_marg_left"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["text_marg_top"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["text_marg_right"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
-        RecHead["text_marg_bottom"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["text_marg_left"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["text_marg_top"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["text_marg_right"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
+        rec_head["text_marg_bottom"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-        bFirstPass = True
+        b_first_pass = True
 
         for x in range(0, 30):
 
@@ -52,7 +53,7 @@ def awfread(path: str) -> dict:
             loop_groups["grpid"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
             # Read temporary timestamp
-            if bFirstPass:
+            if b_first_pass:
                 ttt = np.fromfile(fid, dtype=np.int64, count=1)
                 fid.seek(-8, 1)
                 # Make sure timestamps make sense.
@@ -61,7 +62,7 @@ def awfread(path: str) -> dict:
                     - (ttt / 86400 + date.toordinal(date(1970, 1, 1)))
                     > 0
                 ):
-                    isRZ = True
+                    is_rz = True
                     data["file_time"] = datetime.fromtimestamp(ttt).strftime(
                         "%Y-%m-%d %H:%M:%S"
                     )
@@ -73,9 +74,9 @@ def awfread(path: str) -> dict:
                     )
                     fid.seek(-4, 1)
                     data["file_type"] = "BioSigRP"
-                bFirstPass = False
+                b_first_pass = False
 
-            if isRZ:
+            if is_rz:
                 loop_groups["grp_t"] = np.fromfile(fid, dtype=np.int64, count=1)[0]
             else:
                 loop_groups["grp_t"] = np.fromfile(fid, dtype=np.int32, count=1)[0]
@@ -83,7 +84,7 @@ def awfread(path: str) -> dict:
             loop_groups["newgrp"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
             loop_groups["sgi"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-            #TODO: check why dtype int16 (from TDT specifications) does not work in next two lines
+            # TODO: check why dtype int16 (from TDT specifications) does not work in next two lines
             loop_groups["chan"] = np.fromfile(fid, dtype=np.int8, count=1)[0]
             loop_groups["rtype"] = np.fromfile(fid, dtype=np.int8, count=1)[0]
 
@@ -99,7 +100,7 @@ def awfread(path: str) -> dict:
             loop_groups["navgs"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
             loop_groups["narts"] = np.fromfile(fid, dtype=np.int16, count=1)[0]
 
-            if isRZ:
+            if is_rz:
                 loop_groups["beg_t"] = np.fromfile(fid, dtype=np.int64, count=1)[0]
                 loop_groups["end_t"] = np.fromfile(fid, dtype=np.int64, count=1)[0]
             else:
@@ -140,7 +141,7 @@ def awfread(path: str) -> dict:
             tmp_str = fid.read(50).decode("utf-8").split("\0")
             loop_groups["memo"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
 
-            if isRZ:
+            if is_rz:
                 loop_groups["beg_t"] = np.fromfile(fid, dtype=np.int64, count=1)[0]
                 loop_groups["end_t"] = np.fromfile(fid, dtype=np.int64, count=1)[0]
             else:
@@ -153,46 +154,82 @@ def awfread(path: str) -> dict:
             loop_groups["sgfname2"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
 
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name1"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name1"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name2"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name2"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name3"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name3"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name4"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name4"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name5"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name5"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name6"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name6"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name7"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name7"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name8"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name8"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
-            loop_groups["var_name9"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_name9"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(15).decode("utf-8").split("\0")
             loop_groups["var_name10"] = [
                 x for x in tmp_str if x and np.size(tmp_str) > 1
             ]
 
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit1"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit1"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit2"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit2"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit3"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit3"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit4"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit4"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit5"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit5"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit6"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit6"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit7"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit7"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit8"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit8"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
-            loop_groups["var_unit9"] = [x for x in tmp_str if x and np.size(tmp_str) > 1]
+            loop_groups["var_unit9"] = [
+                x for x in tmp_str if x and np.size(tmp_str) > 1
+            ]
             tmp_str = fid.read(5).decode("utf-8").split("\0")
             loop_groups["var_unit10"] = [
                 x for x in tmp_str if x and np.size(tmp_str) > 1
@@ -244,7 +281,7 @@ def awfread(path: str) -> dict:
             else:
                 groups[x]["wave"] = []
 
-    data["rec_head"] = RecHead
+    data["rec_head"] = rec_head
     data["groups"] = groups
 
     return data
