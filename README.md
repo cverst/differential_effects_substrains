@@ -22,7 +22,7 @@ First clone this repository on your machine and navigate to its directory.
 
 Build the environment from the env.yaml file. This makes sure Python 3.7 and R 3.4 are used, and that the right R packages are installed.
 
-`conda create --file env.yaml`
+`conda env create --file env.yaml`
 
 Then activate the new environment.
 
