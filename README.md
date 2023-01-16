@@ -1,5 +1,5 @@
 # Description
-This repository was used for analysis of the hearing data published as "Differential effects of noise exposure between substrains of CBA mice." This article has been accepted to [Hearing Research](https://www.sciencedirect.com/journal/hearing-research).
+This repository was used for analysis of the hearing data published in [Hearing Research](https://www.sciencedirect.com/journal/hearing-research) as "[Differential effects of noise exposure between substrains of CBA mice](https://doi.org/10.1016/j.heares.2021.108395)".
 
 The repository includes
 1. All ABR wave 1 data, DP data, and histological counts reported in the publication
